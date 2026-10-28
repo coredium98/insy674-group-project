@@ -35,7 +35,12 @@ insy674-group-project/
 ## 1. Frame the problem and look at the big picture
 
 ### Business objective and decision context
-*(State the exact business, research, or public interest objective. Specify who uses the model output and what operational or financial decision changes when the prediction is available.)*
+
+When a workers’ compensation claim is first reported, a claims adjuster sets an initial reserve called InitialCaseEstimate. This is the amount the insurer expects the claim may eventually cost. The challenge is that this estimate is made early, before the full outcome of the claim is known. Adjusters must rely on limited information, experience, and professional judgment. As a result, some claims may be over-reserved, while others may be significantly under-reserved.
+
+Our dataset includes both the original InitialCaseEstimate and the final UltimateIncurredClaimCost. This allows us to measure how accurate the initial reserve was. Our objective is to build a machine-learning decision-support system that helps identify when the initial reserve is likely to be inaccurate. Our central research question is: Can machine learning use information available when a workers’ compensation claim is first reported to identify and reduce errors in the initial reserves set by claims adjusters?
+
+The goal is not to replace the claims adjuster. Instead, the model acts as a second layer of review by identifying patterns in historical claims that may be difficult to detect consistently. If successful, the system could help insurers improve reserve accuracy, identify claims that need closer review, and make better decisions earlier in the claims process.
 
 ### Current workaround and baseline
 *(Describe how the organization solves this problem today without machine learning, and define the baseline score to beat.)*
