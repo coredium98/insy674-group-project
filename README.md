@@ -43,10 +43,19 @@ Our dataset includes both the original InitialCaseEstimate and the final Ultimat
 The goal is not to replace the claims adjuster. Instead, the model acts as a second layer of review by identifying patterns in historical claims that may be difficult to detect consistently. If successful, the system could help insurers improve reserve accuracy, identify claims that need closer review, and make better decisions earlier in the claims process.
 
 ### Current workaround and baseline
-*(Describe how the organization solves this problem today without machine learning, and define the baseline score to beat.)*
+The current process relies on the claims adjuster’s initial estimate, recorded in the dataset as InitialCaseEstimate. When a claim is first reported, the adjuster reviews the information available at that stage and sets an initial reserve based on the details of the claim and their professional judgment.
+
+Since this estimate is made before the claim has fully developed, it may differ from the amount the claim ultimately costs. Our dataset also includes UltimateIncurredClaimCost, which gives us the final outcome and allows us to measure how accurate the original reserve was.
+
+For this project, InitialCaseEstimate will serve as the main baseline. This gives us a practical comparison because we can evaluate whether the machine-learning model improves on the estimate already being made by the human adjuster. The model will be considered useful if it can reduce prediction error compared with this baseline on unseen claims.
 
 ### Problem framing and performance metric
-*(Justify the framing: supervised vs. unsupervised, regression vs. classification, offline vs. online learning. Define the primary evaluation metric and explain why it matches the economic cost of prediction errors.)*
+
+The project is a supervised regression problem because we’re using historical claims with known final outcomes to predict a continuous value. It’s supervised because the model has a known target to learn from, and regression makes more sense than classification because we’re trying to estimate how large the reserving error is, not sort claims into categories.
+
+The project uses offline learning because the model is trained on historical claims and doesn’t update every time a new claim is reported. Instead, it could be retrained periodically as more completed claims and final outcomes become available.
+
+Our primary evaluation metric will be Mean Absolute Error (MAE) because it shows, on average, how far the model’s prediction is from the actual outcome. It also gives us a straightforward way to compare the model with the original InitialCaseEstimate. We’ll also report Root Mean Squared Error (RMSE) because it puts more weight on larger prediction errors, which matters because a major reserving mistake can have a much greater financial impact than a small one.
 
 ## 2. Explore the data
 
