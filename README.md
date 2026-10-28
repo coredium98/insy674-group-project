@@ -5,7 +5,7 @@
 | Name | Role | GitHub ID |
 |---|---|---|
 | Zacharie Houle | Data preparation and feature engineering | `@...` |
-| Teammate 2 | Data exploration and profiling | `@...` |
+| Pranjal Singh | Data exploration and profiling | `@...` |
 | Teammate 3 | Model comparison and error analysis | `@...` |
 | Teammate 4 | Fine-tuning, ensembles, and evaluation | `@...` |
 
