@@ -15,13 +15,15 @@ env/
 .DS_Store
 Thumbs.db
 
-# Data files (keep directory structure via .gitkeep)
+# Data files (allow train.csv and processed parquet splits in Git so teammates have immediate access)
 data/raw/*
 !data/raw/.gitkeep
+!data/raw/train.csv
 data/external/*
 !data/external/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+!data/processed/*.parquet
 
 # Saved model binaries
 models/*.pkl
