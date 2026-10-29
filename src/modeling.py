@@ -176,7 +176,11 @@ def feature_names(fitted_features: ColumnTransformer) -> List[str]:
         if name == "remainder" or trans == "drop":
             continue
         if name == "structured":
-            names += [str(n) for n in trans.named_steps["collinearity_filter"].get_feature_names_out()]
+            # The column step outputs numpy here, so the collinearity filter only knows
+            # positions; map the positions it kept back to the column step's real names.
+            all_names = list(trans.named_steps["columns"].get_feature_names_out())
+            dropped = {int(c) for c in trans.named_steps["collinearity_filter"].cols_to_drop_}
+            names += [n for i, n in enumerate(all_names) if i not in dropped]
         elif name == "text":
             if "svd" in trans.named_steps:
                 names += [f"text_topic_{i}" for i in range(trans.named_steps["svd"].n_components)]

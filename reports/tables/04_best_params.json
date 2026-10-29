@@ -1,40 +1,41 @@
 {
   "LightGBM": {
     "loss": "raw_l1",
-    "n_estimators": 800,
-    "learning_rate": 0.014322493718230255,
-    "num_leaves": 20,
-    "min_child_samples": 11,
-    "subsample": 0.9464704583099741,
-    "colsample_bytree": 0.7606690070459252,
-    "reg_lambda": 0.679657809075816,
-    "text_max_features": 2000,
+    "n_estimators": 1000,
+    "learning_rate": 0.01937343384348396,
+    "num_leaves": 73,
+    "min_child_samples": 46,
+    "subsample": 0.7226698840664428,
+    "colsample_bytree": 0.9170355023268866,
+    "reg_lambda": 0.11072483904887186,
+    "text_max_features": 1000,
     "ngram": 1,
-    "svd": 100,
-    "clip": true,
+    "svd": 30,
+    "clip": false,
     "huber_alpha": null
   },
   "RandomForest": {
-    "max_features": 0.3,
-    "min_samples_leaf": 2,
+    "max_features": 0.5,
+    "min_samples_leaf": 20,
     "max_depth": 20,
     "svd": 30,
     "clip": false
   },
   "LinearSVR": {
-    "C": 0.1,
-    "text_max_features": 2000,
-    "scaler": "robust"
+    "C": 0.03,
+    "text_max_features": 5000,
+    "scaler": "standard"
   },
   "MLP": {
     "hidden": [
+      128,
       64,
       32
     ],
-    "alpha": 0.001,
-    "lr": 0.001,
+    "alpha": 0.5527378668449799,
+    "lr": 0.008649078509565313,
     "svd": 50,
-    "scaler": "standard",
+    "scaler": "robust",
     "imputer": "median",
     "clip": true
   }

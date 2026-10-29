@@ -1,0 +1,92 @@
+{
+  "model": "Stacking: all 4 + median-regression meta-model",
+  "base_models": {
+    "LightGBM": {
+      "loss": "raw_l1",
+      "n_estimators": 1000,
+      "learning_rate": 0.01937343384348396,
+      "num_leaves": 73,
+      "min_child_samples": 46,
+      "subsample": 0.7226698840664428,
+      "colsample_bytree": 0.9170355023268866,
+      "reg_lambda": 0.11072483904887186,
+      "text_max_features": 1000,
+      "ngram": 1,
+      "svd": 30,
+      "clip": false,
+      "huber_alpha": null
+    },
+    "RandomForest": {
+      "max_features": 0.5,
+      "min_samples_leaf": 20,
+      "max_depth": 20,
+      "svd": 30,
+      "clip": false
+    },
+    "LinearSVR": {
+      "C": 0.03,
+      "text_max_features": 5000,
+      "scaler": "standard"
+    },
+    "MLP": {
+      "hidden": [
+        128,
+        64,
+        32
+      ],
+      "alpha": 0.5527378668449799,
+      "lr": 0.008649078509565313,
+      "svd": 50,
+      "scaler": "robust",
+      "imputer": "median",
+      "clip": true
+    }
+  },
+  "trained_on": "30,749 claims (train + validation, 85%)",
+  "input_columns": [
+    "Age",
+    "DependentChildren",
+    "DependentsOther",
+    "WeeklyWages",
+    "PartTimeFullTime",
+    "HoursWorkedPerWeek",
+    "DaysWorkedPerWeek",
+    "ClaimDescription",
+    "InitialIncurredCalimsCost",
+    "reporting_delay_days",
+    "DateTimeOfAccident_year",
+    "DateTimeOfAccident_month",
+    "DateTimeOfAccident_day",
+    "DateTimeOfAccident_dayofweek",
+    "DateTimeOfAccident_is_weekend",
+    "DateReported_year",
+    "DateReported_month",
+    "DateReported_day",
+    "DateReported_dayofweek",
+    "DateReported_is_weekend",
+    "hourly_wage",
+    "hours_per_day",
+    "total_dependents"
+  ],
+  "dropped_columns": [
+    "ClaimNumber",
+    "Gender",
+    "MaritalStatus"
+  ],
+  "cv_MAE": 5252.909157914154,
+  "test_metrics": {
+    "MAE": 5489.511251308223,
+    "RMSE": 26667.626848967324,
+    "MedianAE": 427.22312337305254,
+    "MeanBias(actual-pred)": 4521.270230081728,
+    "MAE_vs_adjuster_%": -15.336598865067009
+  },
+  "adjuster_test_metrics": {
+    "MAE": 6483.924786531159,
+    "RMSE": 27201.283411590208,
+    "MedianAE": 1031.5776499999993,
+    "MeanBias(actual-pred)": 3435.1474967098216,
+    "MAE_vs_adjuster_%": 0.0
+  },
+  "usage": "from src.modeling import prepare_features; model.predict(prepare_features(raw_rows, drop_sensitive=True))"
+}
