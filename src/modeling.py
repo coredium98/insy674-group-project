@@ -3,20 +3,24 @@
 Why this module exists
 ----------------------
 Notebooks 03 and 04 must train every model on *exactly* the same rows and the
-same feature definitions, otherwise their scores are not comparable. Instead of
-reading pre-transformed parquet files (which would freeze one set of
-preparation choices), we:
+same feature definitions as Notebook 02, otherwise their scores are not
+comparable. Instead of reading the pre-transformed parquet files (which would
+freeze one set of preparation choices), we:
 
-1. Re-create the 70 / 15 / 15 train / val / test split from Notebook 02 with the
-   same ``random_state`` so the held-out test rows are identical.
-2. Apply the same stateless feature engineering as Notebook 02
-   (``engineer_features``) - it learns nothing from data, so it cannot leak.
-3. Return a *stateful* preprocessing pipeline (imputation, clipping, scaling,
-   text vectorisation) that is placed **inside** each model pipeline. That way
-   it is re-fitted on the training folds of every cross-validation split, which
-   keeps CV leak-free and lets Notebook 04 tune preparation choices as
-   hyperparameters (Geron, Appendix B: "treat your data transformation choices
-   as hyperparameters").
+1. Re-create Notebook 02's claim-grouped 70 / 15 / 15 split
+   (``GroupShuffleSplit`` on ``ClaimNumber``, ``random_state=42``), so the
+   held-out test rows are identical to ``data/processed/test.parquet``.
+2. Apply Notebook 02's stateless feature engineering (``engineer_features``:
+   anomaly flags, CPI join, date decomposition, domain ratios). It learns
+   nothing from data, so it cannot leak.
+3. Return Notebook 02's *stateful* preprocessing pipeline (imputation, clipping,
+   log transforms, Age bins, encoding, scaling) plus our tunable claim-description
+   text block, placed **inside** each model pipeline. It is re-fitted on the
+   training folds of every cross-validation split, which keeps CV leak-free and
+   lets Notebook 04 tune preparation choices as hyperparameters (Geron,
+   Appendix B: "treat your data transformation choices as hyperparameters").
+4. Build cross-validation folds with ``GroupKFold`` on ``ClaimNumber`` so that,
+   like Notebook 02's split, rows sharing a claim number never sit on both sides.
 """
 
 from pathlib import Path
@@ -28,60 +32,121 @@ from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupKFold, GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 
-from src.preprocessing import build_preprocessing_pipeline, decompose_datetime_features
+from src.preprocessing import build_preprocessing_pipeline, compute_targets, decompose_datetime_features
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CPI_PATH = REPO_ROOT / "data" / "external" / "fred_medical_cpi_annual.csv"
 
 RANDOM_STATE = 42
 TARGET_COL = "UltimateIncurredClaimCost"
 INITIAL_COL = "InitialIncurredCalimsCost"  # sic: the CSV header is misspelled
 TEXT_COL = "ClaimDescription"
 ID_COL = "ClaimNumber"
+# Columns that are outcomes (or derived from the outcome) and must never be predictors
+OUTCOME_COLS = [TARGET_COL, "ReserveShortfall", "LogDevelopmentRatio"]
 
+# Column groups exactly as defined in Notebook 02 (cells 12 and 14)
 LOW_CARD_CAT_COLS = ["Gender", "MaritalStatus", "PartTimeFullTime"]
-# Notebook 03 (iteration 2) shows these two personal attributes add no accuracy,
-# so the shortlisted / final models drop them for fairness and privacy reasons.
+DISCRETIZE_COLS = ["Age"]
+SKEWED_NUMERIC_COLS = [
+    INITIAL_COL,
+    "InitialCost_Real2005",
+    "WeeklyWages",
+    "WeeklyWages_Real2005",
+    "ApproxHourlyWage",
+    "InitialReserveToWageRatio",
+    "ReportingLagDays",
+]
+# Notebook 03 (iteration 2) tests whether these personal attributes add accuracy;
+# the shortlisted / final models drop them for fairness and privacy reasons.
 SENSITIVE_COLS = ["Gender", "MaritalStatus"]
-SKEWED_NUMERIC_COLS = [INITIAL_COL, "WeeklyWages", "hourly_wage", "reporting_delay_days"]
 
 
 # ---------------------------------------------------------------------------
-# 1. Loading and splitting (mirrors Notebook 02 exactly)
+# 1. Loading and splitting (mirrors Notebook 02, cell 3, exactly)
 # ---------------------------------------------------------------------------
-def load_splits(repo_root: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Return (train_df, val_df, test_df) using Notebook 02's split recipe."""
+def load_splits(repo_root: Path = REPO_ROOT) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Return (train_df, val_df, test_df) using Notebook 02's claim-grouped split."""
     raw_df = pd.read_csv(Path(repo_root) / "data" / "raw" / "train.csv")
-    train_val_df, test_df = train_test_split(
-        raw_df.copy(), test_size=0.15, random_state=RANDOM_STATE
-    )
-    train_df, val_df = train_test_split(
-        train_val_df, test_size=0.15 / 0.85, random_state=RANDOM_STATE
-    )
+    data_copy = compute_targets(raw_df.copy())
+
+    gss_test = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=RANDOM_STATE)
+    train_val_idx, test_idx = next(gss_test.split(data_copy, groups=data_copy[ID_COL]))
+    train_val_df = data_copy.iloc[train_val_idx].reset_index(drop=True)
+    test_df = data_copy.iloc[test_idx].reset_index(drop=True)
+
+    gss_val = GroupShuffleSplit(n_splits=1, test_size=0.15 / 0.85, random_state=RANDOM_STATE)
+    train_idx, val_idx = next(gss_val.split(train_val_df, groups=train_val_df[ID_COL]))
+    train_df = train_val_df.iloc[train_idx].reset_index(drop=True)
+    val_df = train_val_df.iloc[val_idx].reset_index(drop=True)
     return train_df, val_df, test_df
 
 
-def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Stateless feature engineering - a copy of ``engineer_features`` in Notebook 02.
+def group_folds(X: pd.DataFrame, groups: pd.Series, n_splits: int = 5):
+    """5-fold CV that keeps all rows of a ClaimNumber in the same fold."""
+    cv = GroupKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
+    return list(cv.split(X, groups=np.asarray(groups)))
 
-    Kept here so Notebooks 03/04 can import it. If Notebook 02's version changes,
-    update this function too (or move both into ``src/preprocessing.py``).
+
+_CPI_CACHE: Optional[pd.DataFrame] = None
+
+
+def _cpi() -> pd.DataFrame:
+    global _CPI_CACHE
+    if _CPI_CACHE is None:
+        _CPI_CACHE = pd.read_csv(CPI_PATH)
+    return _CPI_CACHE
+
+
+def engineer_features(df: pd.DataFrame, external_cpi: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Stateless feature engineering - a copy of ``engineer_features`` in Notebook 02 (cell 11).
+
+    Kept here so Notebooks 03/04 (and the UI) can import it. If Notebook 02's
+    version changes, update this function too (or move both into
+    ``src/preprocessing.py``).
     """
+    external_cpi = _cpi() if external_cpi is None else external_cpi
     out = df.copy()
-    out["HoursWorkedPerWeek"] = out["HoursWorkedPerWeek"].clip(lower=0, upper=168)
 
-    acc_dt = pd.to_datetime(out["DateTimeOfAccident"], errors="coerce")
-    rep_dt = pd.to_datetime(out["DateReported"], errors="coerce")
-    out["reporting_delay_days"] = (rep_dt - acc_dt).dt.days.clip(lower=0)
+    # 1. Parse timestamps in UTC and compute exact ReportingLagDays as in Notebook 01
+    acc_dt = pd.to_datetime(out["DateTimeOfAccident"], errors="coerce", utc=True)
+    rep_dt = pd.to_datetime(out["DateReported"], errors="coerce", utc=True)
+    raw_lag = (rep_dt - acc_dt).dt.total_seconds() / 86400.0
+
+    out["negative_lag_flag"] = (raw_lag < 0).astype(int)
+    out["lag_over_1yr_flag"] = (raw_lag > 365).astype(int)
+    out["ReportingLagDays"] = raw_lag.clip(lower=0.0)
+    out["AccidentYear"] = acc_dt.dt.year
+
+    # 2. Join external FRED Medical Care CPI by AccidentYear
+    idx = out.index
+    out = out.merge(external_cpi, on="AccidentYear", how="left")
+    out.index = idx
+    out["CPI_Multiplier_to_2005"] = out["CPI_Multiplier_to_2005"].fillna(1.0)
+    out["InitialCost_Real2005"] = out[INITIAL_COL] * out["CPI_Multiplier_to_2005"]
+    out["WeeklyWages_Real2005"] = out["WeeklyWages"] * out["CPI_Multiplier_to_2005"]
+
+    # 3. Decompose DateTimeOfAccident and DateReported into calendar/time components
     out = decompose_datetime_features(
         out, date_cols=["DateTimeOfAccident", "DateReported"], drop_original=True
     )
 
-    hours = out["HoursWorkedPerWeek"].replace(0, np.nan)
-    out["hourly_wage"] = out["WeeklyWages"] / hours
-    days = out["DaysWorkedPerWeek"].replace(0, np.nan)
-    out["hours_per_day"] = out["HoursWorkedPerWeek"] / days
-    out["total_dependents"] = out["DependentChildren"].fillna(0) + out["DependentsOther"].fillna(0)
+    # 4. Sanitize implausible HoursWorkedPerWeek (<= 0 or > 168) flagged in Notebook 01
+    invalid_hours = (~out["HoursWorkedPerWeek"].between(0.001, 168.0)) & out["HoursWorkedPerWeek"].notna()
+    out["invalid_hours_flag"] = invalid_hours.astype(int)
+    out.loc[invalid_hours, "HoursWorkedPerWeek"] = np.nan
+    out["age_under_14_flag"] = (out["Age"] < 14).astype(int)
+
+    # 5. Domain ratios and aggregations
+    out["ApproxHourlyWage"] = out["WeeklyWages"] / out["HoursWorkedPerWeek"]
+    days_clean = out["DaysWorkedPerWeek"].replace(0, np.nan)
+    out["HoursPerDay"] = out["HoursWorkedPerWeek"] / days_clean
+    out["TotalDependents"] = out["DependentChildren"].fillna(0) + out["DependentsOther"].fillna(0)
+    wages_pos = out["WeeklyWages"].where(out["WeeklyWages"] > 0, np.nan)
+    out["InitialReserveToWageRatio"] = out[INITIAL_COL] / wages_pos
     return out
 
 
@@ -91,7 +156,7 @@ def prepare_features(raw_df: pd.DataFrame, drop_sensitive: bool = False) -> pd.D
     This is also the entry point for scoring *new* claims (e.g. from the UI):
     ``model.predict(prepare_features(new_claims, drop_sensitive=True))``.
     """
-    eng = engineer_features(raw_df.drop(columns=[ID_COL, TARGET_COL], errors="ignore"))
+    eng = engineer_features(raw_df.drop(columns=[ID_COL] + OUTCOME_COLS, errors="ignore"))
     eng[TEXT_COL] = eng[TEXT_COL].fillna("").astype(str).str.upper()
     if drop_sensitive:
         eng = eng.drop(columns=SENSITIVE_COLS, errors="ignore")
@@ -99,12 +164,12 @@ def prepare_features(raw_df: pd.DataFrame, drop_sensitive: bool = False) -> pd.D
 
 
 def make_xy(df: pd.DataFrame, drop_sensitive: bool = False) -> Tuple[pd.DataFrame, pd.Series]:
-    """Engineer features, drop the ID and the target, and return X, y."""
+    """Engineer features, drop the ID and all outcome columns, and return X, y."""
     return prepare_features(df, drop_sensitive=drop_sensitive), df[TARGET_COL].copy()
 
 
 def numeric_cols_of(X: pd.DataFrame) -> List[str]:
-    """Plain numeric columns = every numeric column that is not in the skewed list."""
+    """Plain numeric columns = every numeric column not in the skewed list (Notebook 02's rule)."""
     return [
         c for c in X.select_dtypes(include=[np.number]).columns
         if c not in SKEWED_NUMERIC_COLS
@@ -122,7 +187,13 @@ def build_feature_pipeline(
     text_svd_components: Optional[int] = 50,
     **prep_kwargs,
 ) -> ColumnTransformer:
-    """Structured features from Notebook 02's pipeline, plus TF-IDF text features.
+    """Notebook 02's structured pipeline, plus our tunable claim-description text block.
+
+    Notebook 02 vectorises the text inside its own pipeline (15 SVD topics). We
+    switch that off (``text_col=None``) and add our own block so the vocabulary
+    size, n-grams and number of topics can be tuned, and so linear models can use
+    the sparse TF-IDF words directly; Notebook 02's 15-topic setting is one point
+    of that search space.
 
     ``prep_kwargs`` are passed through to ``build_preprocessing_pipeline`` so that
     Notebook 04 can tune clipping, imputation, skew transform and scaling.
@@ -136,6 +207,7 @@ def build_feature_pipeline(
         add_missing_indicator=True,
         skew_transform="log1p",
         scaler_type="standard",
+        n_bins=5,
         collinearity_threshold=0.95,
     )
     prep_defaults.update(prep_kwargs)
@@ -144,10 +216,8 @@ def build_feature_pipeline(
         numeric_cols=numeric_cols_of(X),
         skewed_numeric_cols=[c for c in SKEWED_NUMERIC_COLS if c in X.columns],
         low_card_cat_cols=[c for c in LOW_CARD_CAT_COLS if c in X.columns],
-        # Age is intentionally NOT discretised here: it is already in numeric_cols,
-        # and listing it twice makes the ColumnTransformer emit a duplicate "Age"
-        # column (the error that currently stops Notebook 02 from running).
-        discretize_cols=[],
+        discretize_cols=[c for c in DISCRETIZE_COLS if c in X.columns],
+        text_col=None,
         **prep_defaults,
     )
     structured.set_output(transform="default")  # numpy, so it can sit next to sparse text
