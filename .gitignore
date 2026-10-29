@@ -21,6 +21,7 @@ data/raw/*
 !data/raw/train.csv
 data/external/*
 !data/external/.gitkeep
+!data/external/fred_medical_cpi_annual.csv
 data/processed/*
 !data/processed/.gitkeep
 !data/processed/*.parquet
