@@ -335,6 +335,15 @@ def build_preprocessing_pipeline(
                         strategy="quantile",
                     ),
                 ),
+                (
+                    "rename_bins",
+                    FunctionTransformer(
+                        func=None,
+                        feature_names_out=lambda self, names: [
+                            f"{n}_bin" for n in names
+                        ],
+                    ),
+                ),
             ]
         )
         transformers.append(("discretized", disc_pipe, discretize_cols))
