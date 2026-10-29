@@ -1,0 +1,104 @@
+{
+  "model": "Stacking: all 4 + median-regression meta-model",
+  "base_models": {
+    "LightGBM": {
+      "loss": "raw_l1",
+      "n_estimators": 1200,
+      "learning_rate": 0.016053263880003815,
+      "num_leaves": 54,
+      "min_child_samples": 44,
+      "subsample": 0.8385855928125232,
+      "colsample_bytree": 0.8812008324480671,
+      "reg_lambda": 0.0036501599513589235,
+      "text_max_features": 4000,
+      "ngram": 1,
+      "svd": 30,
+      "clip": false,
+      "huber_alpha": null
+    },
+    "RandomForest": {
+      "max_features": 0.2,
+      "min_samples_leaf": 10,
+      "max_depth": 20,
+      "svd": 50,
+      "clip": false
+    },
+    "LinearSVR": {
+      "C": 0.03,
+      "text_max_features": 5000,
+      "scaler": "robust"
+    },
+    "MLP": {
+      "hidden": [
+        128,
+        64,
+        32
+      ],
+      "alpha": 0.6732248920775336,
+      "lr": 0.004138040112561018,
+      "svd": 100,
+      "scaler": "standard",
+      "imputer": "median",
+      "clip": true
+    }
+  },
+  "trained_on": "30,745 claims (train + validation, 85%)",
+  "input_columns": [
+    "Age",
+    "DependentChildren",
+    "DependentsOther",
+    "WeeklyWages",
+    "PartTimeFullTime",
+    "HoursWorkedPerWeek",
+    "DaysWorkedPerWeek",
+    "ClaimDescription",
+    "InitialIncurredCalimsCost",
+    "negative_lag_flag",
+    "lag_over_1yr_flag",
+    "ReportingLagDays",
+    "AccidentYear",
+    "MedicalCPI",
+    "CPI_Multiplier_to_2005",
+    "InitialCost_Real2005",
+    "WeeklyWages_Real2005",
+    "DateTimeOfAccident_year",
+    "DateTimeOfAccident_month",
+    "DateTimeOfAccident_day",
+    "DateTimeOfAccident_dayofweek",
+    "DateTimeOfAccident_hour",
+    "DateTimeOfAccident_is_weekend",
+    "DateReported_year",
+    "DateReported_month",
+    "DateReported_day",
+    "DateReported_dayofweek",
+    "DateReported_hour",
+    "DateReported_is_weekend",
+    "invalid_hours_flag",
+    "age_under_14_flag",
+    "ApproxHourlyWage",
+    "HoursPerDay",
+    "TotalDependents",
+    "InitialReserveToWageRatio"
+  ],
+  "dropped_columns": [
+    "ClaimNumber",
+    "Gender",
+    "MaritalStatus"
+  ],
+  "cv_MAE": 5354.11951923936,
+  "test_metrics": {
+    "MAE": 4960.080772458244,
+    "RMSE": 24714.2050358001,
+    "MedianAE": 441.2446749407345,
+    "MeanBias(actual-pred)": 3922.704149978154,
+    "MAE_vs_adjuster_%": -18.215478365137095
+  },
+  "adjuster_test_metrics": {
+    "MAE": 6064.816023016111,
+    "RMSE": 25487.556455107475,
+    "MedianAE": 1026.0385339999998,
+    "MeanBias(actual-pred)": 2965.359047270981,
+    "MAE_vs_adjuster_%": 0.0
+  },
+  "usage": "from src.modeling import prepare_features; model.predict(prepare_features(raw_rows, drop_sensitive=True))"
+}
