@@ -1,20 +1,24 @@
 """Modular, leak-free data preparation functions and custom transformers.
 
 Structured directly around Aurélien Géron's Machine Learning Project Checklist
-(Appendix B, "Prepare the Data") and INSY 674 Modules 3 and 4:
-- Notes: Work on copies (`df.copy()`) and encapsulate every transformation in
-  functions or `BaseEstimator`/`TransformerMixin` classes so transformations can:
-  (1) run on fresh data, (2) be reused across projects, (3) transform the test
-  set without leakage, (4) score live instances, and (5) expose preparation
-  choices as tunable hyperparameters.
-- Step 1: Data cleaning (outlier clipping fitted on train only, missing-value
-  indicator flags, and configurable imputation: median, mean, zero, iterative).
-- Step 2: Feature selection (dropping uninformative/ID columns, collinearity
-  filter >= 0.95, and optional model-based selection).
-- Step 3: Feature engineering (discretization via KBinsDiscretizer, date/time
-  and text decomposition, mathematical transforms log1p/sqrt/Yeo-Johnson, and
-  feature aggregations/interactions).
-- Step 4: Feature scaling (StandardScaler, MinMaxScaler, RobustScaler, or passthrough).
+(Appendix B, "Prepare the Data"), INSY 674 Modules 3 and 4, and the findings
+from `notebooks/01_explore_data.ipynb`:
+- Notes: Work on copies (`df.copy()`), perform a claim-grouped split
+  (`GroupShuffleSplit` on `ClaimNumber`) to prevent leakage across the 12,560
+  rows sharing claim IDs, and encapsulate every step in functions or
+  `BaseEstimator`/`TransformerMixin` classes.
+- Step 1: Data cleaning (domain anomaly flags and sanitization for the 75 rows
+  with `HoursWorkedPerWeek > 168`, 16 rows with `0` hours, and 2 negative
+  reporting lags; train-only quantile clipping via `QuantileOutlierClipper`;
+  missingness indicators plus configurable imputation for the 56 missing
+  `WeeklyWages`, 49 `HoursWorkedPerWeek`, and 22 `MaritalStatus` records).
+- Step 2: Feature selection (dropping `ClaimNumber` and outcome columns from X,
+  plus automated collinearity pruning at |r| >= 0.95 via `CollinearityDropper`).
+- Step 3: Feature engineering (external FRED Medical Care CPI join by
+  `AccidentYear`, UTC timestamp decomposition and reporting lag in days,
+  employment ratios, `KBinsDiscretizer` on `Age`, mathematical transforms
+  `log1p`/`sqrt`/`Yeo-Johnson`, and TF-IDF + TruncatedSVD on `ClaimDescription`).
+- Step 4: Feature scaling (`StandardScaler`, `MinMaxScaler`, or `RobustScaler`).
 """
 
 from typing import List, Optional, Sequence
@@ -22,7 +26,9 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
+from sklearn.decomposition import TruncatedSVD
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.impute import IterativeImputer, SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import (
@@ -31,7 +37,6 @@ from sklearn.preprocessing import (
     MinMaxScaler,
     OneHotEncoder,
     OrdinalEncoder,
-    PolynomialFeatures,
     PowerTransformer,
     RobustScaler,
     StandardScaler,
@@ -76,6 +81,62 @@ class QuantileOutlierClipper(BaseEstimator, TransformerMixin):
         return self.feature_names_in_
 
 
+class ClaimTextSVDTransformer(BaseEstimator, TransformerMixin):
+    """Step 3 (Feature engineering): TF-IDF + TruncatedSVD for ClaimDescription.
+
+    As found in Notebook 01, `ClaimDescription` has 20,596 unique phrases with an
+    average length of 7 words. This transformer fits a TF-IDF vocabulary and
+    latent semantic components strictly on the training split and returns dense
+    numeric columns (`text_svd_0`, ..., `text_svd_k`).
+    """
+
+    def __init__(
+        self,
+        n_components: int = 15,
+        max_features: int = 500,
+        ngram_range: tuple = (1, 2),
+    ):
+        self.n_components = n_components
+        self.max_features = max_features
+        self.ngram_range = ngram_range
+
+    def _extract_series(self, X) -> pd.Series:
+        if isinstance(X, pd.DataFrame):
+            s = X.iloc[:, 0]
+        elif isinstance(X, pd.Series):
+            s = X
+        else:
+            s = pd.Series(np.asarray(X).ravel())
+        return s.fillna("").astype(str)
+
+    def fit(self, X, y=None):
+        texts = self._extract_series(X)
+        self.tfidf_ = TfidfVectorizer(
+            max_features=self.max_features,
+            ngram_range=self.ngram_range,
+            stop_words="english",
+            lowercase=True,
+        )
+        tfidf_mat = self.tfidf_.fit_transform(texts)
+        eff_components = min(self.n_components, max(1, tfidf_mat.shape[1] - 1))
+        self.svd_ = TruncatedSVD(n_components=eff_components, random_state=42)
+        self.svd_.fit(tfidf_mat)
+        self.feature_names_out_ = np.array(
+            [f"text_svd_{i}" for i in range(eff_components)], dtype=object
+        )
+        return self
+
+    def transform(self, X) -> pd.DataFrame:
+        texts = self._extract_series(X)
+        tfidf_mat = self.tfidf_.transform(texts)
+        svd_mat = self.svd_.transform(tfidf_mat)
+        idx = X.index if hasattr(X, "index") else None
+        return pd.DataFrame(svd_mat, columns=self.feature_names_out_, index=idx)
+
+    def get_feature_names_out(self, input_features=None):
+        return self.feature_names_out_
+
+
 class CollinearityDropper(BaseEstimator, TransformerMixin):
     """Step 2 (Feature selection): Drop one of any pair of features with |r| >= threshold.
 
@@ -110,17 +171,37 @@ class CollinearityDropper(BaseEstimator, TransformerMixin):
 
     def get_feature_names_out(self, input_features=None):
         cols = (
-             list(input_features)
+            list(input_features)
             if input_features is not None
             else list(self.feature_names_in_)
         )
-        return np.array([c for c in cols if c not in self.cols_to_drop_], dtype=object)
+        return np.array(
+            [c for c in cols if c not in self.cols_to_drop_], dtype=object
+        )
+
+
+def compute_targets(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute the row-level audit targets defined in Notebook 01.
+
+    - `ReserveShortfall` = `UltimateIncurredClaimCost - InitialIncurredCalimsCost`
+      (primary dollar audit target; positive means under-reserving)
+    - `LogDevelopmentRatio` = `log(UltimateIncurredClaimCost / InitialIncurredCalimsCost)`
+      (scale-normalized log target; defined for all 36,176 rows since both costs > 0)
+    """
+    out = df.copy()
+    out["ReserveShortfall"] = (
+        out["UltimateIncurredClaimCost"] - out["InitialIncurredCalimsCost"]
+    )
+    out["LogDevelopmentRatio"] = np.log(
+        out["UltimateIncurredClaimCost"] / out["InitialIncurredCalimsCost"]
+    )
+    return out
 
 
 def drop_uninformative_columns(
     df: pd.DataFrame, cols_to_drop: Sequence[str]
 ) -> pd.DataFrame:
-    """Step 2 (Feature selection): Return a copy with ID or useless columns removed."""
+    """Step 2 (Feature selection): Return a copy with ID or outcome columns removed."""
     out = df.copy()
     existing = [c for c in cols_to_drop if c in out.columns]
     return out.drop(columns=existing)
@@ -131,16 +212,17 @@ def decompose_datetime_features(
     date_cols: Sequence[str],
     drop_original: bool = True,
 ) -> pd.DataFrame:
-    """Step 3 (Feature engineering): Decompose date/time columns into calendar parts."""
+    """Step 3 (Feature engineering): Decompose UTC timestamps into calendar parts."""
     out = df.copy()
     for col in date_cols:
         if col not in out.columns:
             continue
-        dt = pd.to_datetime(out[col], errors="coerce")
+        dt = pd.to_datetime(out[col], errors="coerce", utc=True)
         out[f"{col}_year"] = dt.dt.year
         out[f"{col}_month"] = dt.dt.month
         out[f"{col}_day"] = dt.dt.day
         out[f"{col}_dayofweek"] = dt.dt.dayofweek
+        out[f"{col}_hour"] = dt.dt.hour
         out[f"{col}_is_weekend"] = (dt.dt.dayofweek >= 5).astype(int)
         if drop_original:
             out = out.drop(columns=[col])
@@ -153,19 +235,22 @@ def build_preprocessing_pipeline(
     discretize_cols: Optional[List[str]] = None,
     low_card_cat_cols: Optional[List[str]] = None,
     ordinal_cat_cols: Optional[List[str]] = None,
+    text_col: Optional[str] = None,
     clip_outliers: bool = True,
     num_imputer_strategy: str = "median",
     add_missing_indicator: bool = True,
     skew_transform: str = "log1p",
     n_bins: int = 5,
+    n_text_svd_components: int = 15,
     scaler_type: str = "standard",
     collinearity_threshold: float = 0.95,
 ) -> Pipeline:
     """Build a complete, leak-free preparation pipeline covering Steps 1 to 4.
 
     Every choice (outlier clipping, imputation strategy, missingness flags,
-    skew transformation, bin count, scaling method, and collinearity threshold)
-    is exposed as a parameter so it can be tuned as a hyperparameter in Notebook 04.
+    skew transformation, bin count, text SVD dimensions, scaling method, and
+    collinearity threshold) is exposed as a parameter so it can be tuned as a
+    hyperparameter in Notebook 04.
     """
     skewed_numeric_cols = skewed_numeric_cols or []
     discretize_cols = discretize_cols or []
@@ -260,7 +345,11 @@ def build_preprocessing_pipeline(
                 ("imputer", SimpleImputer(strategy="most_frequent")),
                 (
                     "onehot",
-                    OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                    OneHotEncoder(
+                        min_frequency=10,
+                        handle_unknown="infrequent_if_exist",
+                        sparse_output=False,
+                    ),
                 ),
             ]
         )
@@ -279,6 +368,18 @@ def build_preprocessing_pipeline(
             ]
         )
         transformers.append(("cat_ord", ord_pipe, ordinal_cat_cols))
+
+    if text_col:
+        text_pipe = Pipeline(
+            steps=[
+                (
+                    "tfidf_svd",
+                    ClaimTextSVDTransformer(n_components=n_text_svd_components),
+                ),
+                ("scaler", scaler),
+            ]
+        )
+        transformers.append(("text", text_pipe, [text_col]))
 
     col_transformer = ColumnTransformer(
         transformers=transformers,

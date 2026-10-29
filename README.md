@@ -70,10 +70,13 @@ Full profiling and visualizations are in `notebooks/01_explore_data.ipynb`.
 The automated, leak-free preparation workflow is implemented in `notebooks/02_prepare_data.ipynb` and modularized in `src/preprocessing.py`.
 
 ### Data splitting and anti-leakage protocol
-The raw dataset is split into `train.parquet`, `val.parquet`, and `test.parquet` before any imputation, encoding, or scaling is fitted. All transformers are fitted strictly on `train` and applied to `val` and `test` through a unified scikit-learn `Pipeline`.
+Before fitting any imputation, transformation, or scaling parameters, we compute the row-level audit targets (`ReserveShortfall` and `LogDevelopmentRatio`) and split the 36,176 claims into `train.parquet` (70%), `val.parquet` (15%), and `test.parquet` (15%) using `GroupShuffleSplit` on `ClaimNumber`. Grouping by `ClaimNumber` guarantees that the 12,560 rows sharing repeated claim identifiers never cross between training and evaluation sets. `UltimateIncurredClaimCost` and all derived targets are excluded from the feature matrix $X$, while `InitialIncurredCalimsCost` is retained in $X$ because the adjuster's initial reserve is recorded at First Notice of Loss (FNOL).
 
 ### Cleaning, feature engineering, and scaling
-*(Document the rationale for outlier handling, missing value imputation, domain feature engineering, discretization, mathematical transformations for skewed distributions, and feature scaling.)*
+1. Recording anomalies and outliers: Rather than dropping rows (which would prevent scoring incomplete or extreme claims in production), we flag and sanitize physical recording anomalies identified during exploration (`HoursWorkedPerWeek` outside `(0, 168]` across 91 rows and 2 negative reporting lags) and apply train-only quantile clipping (`QuantileOutlierClipper` at the 1st and 99th percentiles, tunable as a hyperparameter).
+2. Missing values: Missing entries in `WeeklyWages` (56 rows), `HoursWorkedPerWeek` (49 rows plus sanitized anomalies), and `MaritalStatus` (22 rows) are paired with boolean missingness indicators (`add_indicator=True`) and imputed using train-only median or `IterativeImputer` strategies.
+3. External data enrichment and domain features: We join annual US Medical Care CPI data from FRED (`data/external/fred_medical_cpi_annual.csv`, series `CPIMEDSL`, 1988 to 2005) on `AccidentYear` to express initial reserves and wages in constant 2005 dollars (`InitialCost_Real2005`, `WeeklyWages_Real2005`). We decompose UTC accident and reporting timestamps, engineer `ReportingLagDays`, `ApproxHourlyWage`, `HoursPerDay`, `TotalDependents`, and `InitialReserveToWageRatio`, discretize `Age` via `KBinsDiscretizer`, apply `log1p` transforms to heavy-tailed monetary predictors, and extract 15 latent injury-description features from `ClaimDescription` using `TfidfVectorizer` + `TruncatedSVD`.
+4. Scaling and feature selection: Continuous predictors are standardized (`StandardScaler`) and filtered for redundant collinearity ($|r| \ge 0.95$ learned on `train` via `CollinearityDropper`).
 
 ## 4. Measure and compare performance
 
