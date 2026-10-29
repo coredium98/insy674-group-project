@@ -1,0 +1,41 @@
+{
+  "LightGBM": {
+    "loss": "raw_l1",
+    "n_estimators": 800,
+    "learning_rate": 0.014322493718230255,
+    "num_leaves": 20,
+    "min_child_samples": 11,
+    "subsample": 0.9464704583099741,
+    "colsample_bytree": 0.7606690070459252,
+    "reg_lambda": 0.679657809075816,
+    "text_max_features": 2000,
+    "ngram": 1,
+    "svd": 100,
+    "clip": true,
+    "huber_alpha": null
+  },
+  "RandomForest": {
+    "max_features": 0.3,
+    "min_samples_leaf": 2,
+    "max_depth": 20,
+    "svd": 30,
+    "clip": false
+  },
+  "LinearSVR": {
+    "C": 0.1,
+    "text_max_features": 2000,
+    "scaler": "robust"
+  },
+  "MLP": {
+    "hidden": [
+      64,
+      32
+    ],
+    "alpha": 0.001,
+    "lr": 0.001,
+    "svd": 50,
+    "scaler": "standard",
+    "imputer": "median",
+    "clip": true
+  }
+}

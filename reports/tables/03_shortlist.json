@@ -1,0 +1,15 @@
+{
+  "shortlist": [
+    "LightGBM",
+    "RandomForest",
+    "LinearSVR",
+    "MLP"
+  ],
+  "drop_columns": [
+    "Gender",
+    "MaritalStatus"
+  ],
+  "use_text": true,
+  "target_transform": "log1p",
+  "cv": "KFold(5, shuffle=True, random_state=42)"
+}
