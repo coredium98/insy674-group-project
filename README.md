@@ -128,7 +128,12 @@ Data-preparation choices tuned as hyperparameters: loss / target transform, outl
 
 * **−18.2% MAE vs the adjuster: $1,105 saved per claim (95% bootstrap CI $911–$1,333)**; closer to the final cost than the adjuster on **74%** of claims; 45–62% more accurate on claims up to ~$10,000.
 * **As a review tool:** reviewing the 2% of claims with the largest predicted shortfall finds a materially under-reserved claim 50% of the time, **6.0× the hit rate of random review**; the top 10% catches 34% of all materially under-reserved claims.
-* **Main drivers:** initial reserve, claim description, then Notebook 02's reserve-to-wage ratio (permutation importance ≈ $4,600, ≈ $960 and ≈ $360 of MAE). SHAP shows hand/finger laceration wording lowers predicted cost while back, shoulder, lifting and fall wording raises it.
+* **Main drivers:** initial reserve, claim description, then Notebook 02's reserve-to-wage ratio (permutation importance ≈ $4,600, ≈ $960 and ≈ $360 of MAE). SHAP shows hand/finger laceration wording lowers predicted cost while back, shoulder, lifting and fall wording raises it. Key takeaway: *"The adjuster's reserve sets the level; the words in the claim description tell you which way it will drift."*
+
+### What worked and what did not
+
+* **What worked:** Notebook 02's domain and external CPI features (`InitialReserveToWageRatio`, `WeeklyWages_Real2005`, `InitialCost_Real2005`); extracting TF-IDF and SVD features from `ClaimDescription` (up to −\$310 MAE across model families); matching the training loss directly to the business evaluation metric (`raw_l1` absolute-error loss in dollars instead of log-scale L2); Bayesian hyperparameter optimization with Optuna TPE for LightGBM and MLP; and dropping sensitive personal attributes (`Gender`, `MaritalStatus`) with zero loss in accuracy.
+* **What did not:** Instance-based regression (`KNN`, MAE \$6,541, worse than the human adjuster because Euclidean distance across ~35 scaled features treats calendar noise equally with the initial reserve); multiplying the adjuster's reserve by a single portfolio development factor (\$6,309 MAE); `raw_l2` or `Tweedie` losses when evaluated on per-claim MAE (\$7,804 and \$6,181); simple-average voting ensembles (diluting LightGBM with weaker models raised MAE to \$5,416+); and using RMSE as a model-selection criterion (fold-to-fold standard deviation of ~\$3,000 driven by a handful of claims above \$400,000).
 
 ### Assumptions and system limitations
 
