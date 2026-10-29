@@ -80,20 +80,20 @@ Before fitting any imputation, transformation, or scaling parameters, we compute
 
 ## 4. Measure and compare performance
 
-Model shortlisting and error analysis are in `notebooks/03_compare_models.ipynb`. Both modelling notebooks rebuild Notebook 02's exact 70/15/15 split from `data/raw/train.csv` and share helpers in `src/modeling.py`; all preprocessing sits inside each model's pipeline, so it is re-fitted on every cross-validation fold (no leakage). The test split is not touched until the final evaluation.
+Model shortlisting and error analysis are in `notebooks/03_compare_models.ipynb`. Both modelling notebooks reproduce Notebook 02's claim-grouped 70/15/15 split exactly (verified row by row against `data/processed/`), use Notebook 02's feature engineering and `src/preprocessing.py` pipeline, and share helpers in `src/modeling.py`. All preprocessing sits inside each model's pipeline, so it is re-fitted on every cross-validation fold. CV folds use `GroupKFold` on `ClaimNumber` (no claim number on both sides of a fold). The test split is not touched until the final evaluation.
 
 ### Cross-validation results across model families
 
-* **Baseline to beat:** the adjuster's initial reserve, 5-fold CV **MAE $6,348 ± 489**. It under-reserves 54% of claims. A constant prediction does far worse (median: $9,801), and multiplying the reserve by one development factor does not help ($6,485).
-* **Iteration 1 (structured features only):** 8 families with near-default settings: Ridge, LinearSVR, KNN, decision tree, RandomForest, LightGBM, XGBoost, MLP (log-cost target). Seven beat the adjuster; best were RandomForest ($5,928 ± 446), LightGBM ($5,983 ± 444) and LinearSVR ($5,995 ± 435). KNN was worse than the adjuster ($7,103).
-* **Iteration 2 (feature engineering + selection):** TF-IDF features from `ClaimDescription` improved every strong model (up to −$261); RandomForest ($5,717) and LightGBM ($5,723) reached **~10% below the adjuster**. Removing `Gender` and `MaritalStatus` changed MAE by only $9, so they are excluded from all final models.
-* **Iteration 3 (loss function):** for LightGBM, an absolute-error (L1) loss on dollars gave the best MAE ($5,412) but predicts only 61% of total dollars; squared error on dollars gets totals right but is worse than the adjuster per claim. The loss became a tuned hyperparameter in Notebook 04.
+* **Baseline to beat:** the adjuster's initial reserve, 5-fold CV **MAE $6,161 ± 316**. It under-reserves 54% of claims. A constant prediction does far worse (median: $9,588), and multiplying the reserve by one development factor does not help ($6,309).
+* **Iteration 1 (structured features only):** 8 families with near-default settings: Ridge, LinearSVR, KNN, decision tree, RandomForest, LightGBM, XGBoost, MLP (log-cost target). Seven beat the adjuster; best were RandomForest ($5,722 ± 397), LinearSVR ($5,745 ± 413) and LightGBM ($5,757 ± 398). KNN was worse than the adjuster ($6,562).
+* **Iteration 2 (feature engineering + selection):** TF-IDF features from `ClaimDescription` improved every strong model (up to −$310); LightGBM ($5,516) and RandomForest ($5,517) reached **~10.5% below the adjuster**. Removing `Gender` and `MaritalStatus` did not hurt (LightGBM $5,516 → $5,504), so they are excluded from all final models.
+* **Iteration 3 (loss function):** for LightGBM, an absolute-error (L1) loss on dollars gave the best MAE ($5,189) but predicts only 62% of total dollars; squared error on dollars gets totals right (102%) but is worse than the adjuster per claim. The loss became a tuned hyperparameter in Notebook 04.
 
 ### Feature importance and error analysis
 
-* **Most significant variables** (permutation importance on the validation split, every algorithm): the **initial reserve** dominates (shuffling it adds ≈ $6,000 of MAE), followed by the **claim description** (≈ $700 once added), then wages and accident year. Words that raise predicted cost: *shoulder, head, fracture, back, fall*; words that lower it: *eye, foreign (body), bruised, laceration, burn, finger*.
-* **Error types:** models beat the adjuster on mid-sized claims, are slightly worse on the very smallest, and, like the adjuster, cannot anticipate rare catastrophic claims (the top 1% of claims cause about a third of all absolute error).
-* **Error diversity:** LightGBM, XGBoost and RandomForest make nearly identical errors (log-residual correlation 0.95–0.98); LinearSVR and MLP err differently (≈ 0.86–0.88). Averaging LightGBM with LinearSVR already lowers out-of-fold MAE to $5,541.
+* **Most significant variables** (permutation importance on the validation split, every algorithm): the **initial reserve** dominates (shuffling it adds $3,500–7,000 of MAE). Notebook 02's **`InitialReserveToWageRatio`** and **CPI-adjusted wages** form the second tier for linear and forest models, and the **claim description** adds ≈ $720 once included. Words that raise predicted cost: *shoulder, head, slipped disc, fracture, back*; words that lower it: *eye, foreign (body), lacerated, bruised, burn, finger*.
+* **Error types:** models beat the adjuster on mid-sized claims, are slightly worse on the very smallest, and, like the adjuster, cannot anticipate rare catastrophic claims (the top 1% of claims cause 28–31% of all absolute error).
+* **Error diversity:** LightGBM, XGBoost and RandomForest make nearly identical errors (log-residual correlation 0.95–0.98); LinearSVR and MLP err differently (≈ 0.87–0.89). Averaging LightGBM with LinearSVR already lowers out-of-fold MAE to $5,321.
 * **Shortlist:** LightGBM, RandomForest, LinearSVR, MLP (four families, diverse errors). XGBoost was dropped as redundant with LightGBM, Ridge as dominated by LinearSVR.
 
 ## 5. Fine-tune the system
@@ -102,38 +102,38 @@ Hyperparameter optimization, ensembling, held-out test evaluation and interpreta
 
 ### Hyperparameter search and preprocessing tuning
 
-Tuning uses 5-fold CV on train + validation (85% of claims), optimising MAE.
+Tuning uses 5-fold claim-grouped CV on train + validation (85% of claims), optimising MAE. The adjuster scores $6,349 on these folds.
 
 | Model | Search method (why) | Default → tuned CV MAE |
 |---|---|---|
-| LightGBM | Bayesian optimisation, Optuna TPE, 30 trials (many continuous/conditional parameters, ~20 s per trial) | $5,626 → **$5,269** |
-| RandomForest | Random search, 6 configurations (robust model, slowest to fit) | $5,625 → $5,584 |
-| MLP | Bayesian optimisation, Optuna TPE, 15 trials (log-scaled continuous parameters) | $5,921 → $5,660 |
-| LinearSVR | Grid search, 12 configurations (only three discrete choices) | $5,793 → $5,752 |
+| LightGBM | Bayesian optimisation, Optuna TPE, 30 trials (many continuous/conditional parameters, ~20 s per trial) | $5,722 → **$5,377** |
+| RandomForest | Random search, 6 configurations (robust model, slowest to fit) | $5,717 → $5,674 |
+| MLP | Bayesian optimisation, Optuna TPE, 15 trials (log-scaled continuous parameters) | $6,006 → $5,738 |
+| LinearSVR | Grid search, 12 configurations (only three discrete choices) | $5,797 → $5,752 |
 
-Data-preparation choices tuned as hyperparameters: loss / target transform, outlier clipping, imputation strategy, scaler, TF-IDF vocabulary size and n-grams, number of SVD text topics. Key findings: the **L1 loss on dollars** won every top LightGBM trial; a **smaller text representation** (1,000 words, 30 topics) generalised best; outlier clipping helped the MLP but not the tree models.
+Data-preparation choices tuned as hyperparameters: loss / target transform, outlier clipping, imputation strategy, scaler, TF-IDF vocabulary size and n-grams, number of SVD text topics. Key findings: the **L1 loss on dollars** won every top LightGBM trial (≈ $5,380 vs ≈ $5,690 for log + L2); a **compact text representation** (single words, 30 topics) generalised best; outlier clipping helped the MLP but not the tree models.
 
 ### Ensemble methods and final test set performance
 
-* **Ensembles (CV):** stacking with a median-regression meta-model was best ($5,253 ± 427), statistically tied with tuned LightGBM alone ($5,269). The meta-model weights LightGBM 0.85 and LinearSVR 0.16, and ignores RandomForest and MLP. Simple-average voting was worse than LightGBM alone ($5,335+). Stacking was selected by the pre-declared lowest-CV-MAE rule.
-* **Held-out test set (5,427 claims, used once):**
+* **Ensembles (CV):** stacking with a median-regression meta-model was best ($5,354 ± 616), statistically tied with tuned LightGBM alone ($5,377). The meta-model weights LightGBM 0.78, LinearSVR 0.14 and MLP 0.10, and ignores RandomForest. Simple-average voting was worse than LightGBM alone ($5,416+). Stacking was selected by the pre-declared lowest-CV-MAE rule.
+* **Held-out test set (5,431 claims, same rows as `data/processed/test.parquet`, used once):**
 
 | | MAE | Median AE | RMSE |
 |---|---|---|---|
-| **Final model** | **$5,490** | **$427** | $26,668 |
-| Adjuster initial reserve | $6,484 | $1,032 | $27,201 |
+| **Final model** | **$4,960** | **$441** | $24,714 |
+| Adjuster initial reserve | $6,065 | $1,026 | $25,488 |
 
-* **−15.3% MAE vs the adjuster: $994 saved per claim (95% bootstrap CI $817–$1,181)**; closer to the final cost than the adjuster on **73%** of claims; 43–61% more accurate on claims up to ~$10,000.
-* **As a review tool:** reviewing the 2% of claims with the largest predicted shortfall finds a materially under-reserved claim 47% of the time, **5.7× the hit rate of random review**; the top 10% catches 29% of all materially under-reserved claims.
-* **Main drivers:** initial reserve, then claim description (permutation importance ≈ $5,300 and ≈ $980 of MAE); SHAP shows hand/finger laceration wording lowers predicted cost while back, shoulder, lifting and fall wording raises it.
+* **−18.2% MAE vs the adjuster: $1,105 saved per claim (95% bootstrap CI $911–$1,333)**; closer to the final cost than the adjuster on **74%** of claims; 45–62% more accurate on claims up to ~$10,000.
+* **As a review tool:** reviewing the 2% of claims with the largest predicted shortfall finds a materially under-reserved claim 50% of the time, **6.0× the hit rate of random review**; the top 10% catches 34% of all materially under-reserved claims.
+* **Main drivers:** initial reserve, claim description, then Notebook 02's reserve-to-wage ratio (permutation importance ≈ $4,600, ≈ $960 and ≈ $360 of MAE). SHAP shows hand/finger laceration wording lowers predicted cost while back, shoulder, lifting and fall wording raises it.
 
 ### Assumptions and system limitations
 
-1. **Random rather than time-based split** while accident year is a predictor: production error on future claims is likely higher. *Fix:* validate on the latest accident years, inflation-adjust costs, retrain periodically.
-2. **The L1 loss predicts the typical outcome**, so predictions sum to only 59% of actual total cost. *Use for ranking and adjusting individual claims, not for the aggregate reserve*, which stays with actuarial methods.
-3. **Catastrophic claims remain unpredictable at first notice** (top-quintile gain only 8%). *Fix:* a second model at 30–90 days using medical codes, time off work and litigation information.
+1. **Claim-grouped random split rather than a time-based split**, while accident year is a predictor: production error on future claims is likely higher. CPI adjustment removes medical-price inflation but not changes in claim practice. *Fix:* validate on the latest accident years; retrain periodically.
+2. **The L1 loss predicts the typical outcome**, so predictions sum to only 63% of actual total cost (adjuster: 72%). *Use for ranking and adjusting individual claims, not for the aggregate reserve*, which stays with actuarial methods.
+3. **Catastrophic claims remain unpredictable at first notice** (top-quintile gain only 10%). *Fix:* a second model at 30–90 days using medical codes, time off work and litigation information.
 4. **The model learns to correct current adjusters**; a change in reserving guidelines would break those corrections. *Fix:* monitor the reserve distribution and retrain on drift.
-5. **Synthetic competition data** with no jurisdiction, policy or employer information; results need a pilot on real closed claims.
+5. **Synthetic competition data** with no jurisdiction, policy or employer information, and US medical CPI assumed as the right deflator; results need a pilot on real closed claims.
 6. **Short, noisy free text** (~7 words); wording conventions elsewhere would weaken the text features.
 7. **Fairness:** gender and marital status are excluded, but age and wages remain and can act as proxies. *Fix:* audit errors and flag rates by group; keep a human decision-maker.
 8. **Complexity:** stacking is statistically tied with a single LightGBM; the simpler model is a reasonable deployment choice if explanations matter more.

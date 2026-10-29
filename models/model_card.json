@@ -3,30 +3,30 @@
   "base_models": {
     "LightGBM": {
       "loss": "raw_l1",
-      "n_estimators": 1000,
-      "learning_rate": 0.01937343384348396,
-      "num_leaves": 73,
-      "min_child_samples": 46,
-      "subsample": 0.7226698840664428,
-      "colsample_bytree": 0.9170355023268866,
-      "reg_lambda": 0.11072483904887186,
-      "text_max_features": 1000,
+      "n_estimators": 1200,
+      "learning_rate": 0.016053263880003815,
+      "num_leaves": 54,
+      "min_child_samples": 44,
+      "subsample": 0.8385855928125232,
+      "colsample_bytree": 0.8812008324480671,
+      "reg_lambda": 0.0036501599513589235,
+      "text_max_features": 4000,
       "ngram": 1,
       "svd": 30,
       "clip": false,
       "huber_alpha": null
     },
     "RandomForest": {
-      "max_features": 0.5,
-      "min_samples_leaf": 20,
+      "max_features": 0.2,
+      "min_samples_leaf": 10,
       "max_depth": 20,
-      "svd": 30,
+      "svd": 50,
       "clip": false
     },
     "LinearSVR": {
       "C": 0.03,
       "text_max_features": 5000,
-      "scaler": "standard"
+      "scaler": "robust"
     },
     "MLP": {
       "hidden": [
@@ -34,15 +34,15 @@
         64,
         32
       ],
-      "alpha": 0.5527378668449799,
-      "lr": 0.008649078509565313,
-      "svd": 50,
-      "scaler": "robust",
+      "alpha": 0.6732248920775336,
+      "lr": 0.004138040112561018,
+      "svd": 100,
+      "scaler": "standard",
       "imputer": "median",
       "clip": true
     }
   },
-  "trained_on": "30,749 claims (train + validation, 85%)",
+  "trained_on": "30,745 claims (train + validation, 85%)",
   "input_columns": [
     "Age",
     "DependentChildren",
@@ -53,39 +53,51 @@
     "DaysWorkedPerWeek",
     "ClaimDescription",
     "InitialIncurredCalimsCost",
-    "reporting_delay_days",
+    "negative_lag_flag",
+    "lag_over_1yr_flag",
+    "ReportingLagDays",
+    "AccidentYear",
+    "MedicalCPI",
+    "CPI_Multiplier_to_2005",
+    "InitialCost_Real2005",
+    "WeeklyWages_Real2005",
     "DateTimeOfAccident_year",
     "DateTimeOfAccident_month",
     "DateTimeOfAccident_day",
     "DateTimeOfAccident_dayofweek",
+    "DateTimeOfAccident_hour",
     "DateTimeOfAccident_is_weekend",
     "DateReported_year",
     "DateReported_month",
     "DateReported_day",
     "DateReported_dayofweek",
+    "DateReported_hour",
     "DateReported_is_weekend",
-    "hourly_wage",
-    "hours_per_day",
-    "total_dependents"
+    "invalid_hours_flag",
+    "age_under_14_flag",
+    "ApproxHourlyWage",
+    "HoursPerDay",
+    "TotalDependents",
+    "InitialReserveToWageRatio"
   ],
   "dropped_columns": [
     "ClaimNumber",
     "Gender",
     "MaritalStatus"
   ],
-  "cv_MAE": 5252.909157914154,
+  "cv_MAE": 5354.11951923936,
   "test_metrics": {
-    "MAE": 5489.511251308223,
-    "RMSE": 26667.626848967324,
-    "MedianAE": 427.22312337305254,
-    "MeanBias(actual-pred)": 4521.270230081728,
-    "MAE_vs_adjuster_%": -15.336598865067009
+    "MAE": 4960.080772458244,
+    "RMSE": 24714.2050358001,
+    "MedianAE": 441.2446749407345,
+    "MeanBias(actual-pred)": 3922.704149978154,
+    "MAE_vs_adjuster_%": -18.215478365137095
   },
   "adjuster_test_metrics": {
-    "MAE": 6483.924786531159,
-    "RMSE": 27201.283411590208,
-    "MedianAE": 1031.5776499999993,
-    "MeanBias(actual-pred)": 3435.1474967098216,
+    "MAE": 6064.816023016111,
+    "RMSE": 25487.556455107475,
+    "MedianAE": 1026.0385339999998,
+    "MeanBias(actual-pred)": 2965.359047270981,
     "MAE_vs_adjuster_%": 0.0
   },
   "usage": "from src.modeling import prepare_features; model.predict(prepare_features(raw_rows, drop_sensitive=True))"

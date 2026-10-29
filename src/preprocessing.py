@@ -229,6 +229,11 @@ def decompose_datetime_features(
     return out
 
 
+def _bin_feature_names(transformer, names):
+    """Output names for the Age-bin step: `Age` -> `Age_bin`."""
+    return [f"{n}_bin" for n in names]
+
+
 def build_preprocessing_pipeline(
     numeric_cols: List[str],
     skewed_numeric_cols: Optional[List[str]] = None,
@@ -339,9 +344,9 @@ def build_preprocessing_pipeline(
                     "rename_bins",
                     FunctionTransformer(
                         func=None,
-                        feature_names_out=lambda self, names: [
-                            f"{n}_bin" for n in names
-                        ],
+                        # A named function (not a lambda) so fitted pipelines can be
+                        # saved with joblib/pickle, e.g. for the UI.
+                        feature_names_out=_bin_feature_names,
                     ),
                 ),
             ]
