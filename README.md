@@ -4,8 +4,9 @@
 
 | Name | Role | GitHub ID |
 |---|---|---|
-| Zacharie Houle | Data preparation and feature engineering | `@...` |
-| Pranjal Singh | Data exploration and profiling | `@...` |
+| Nebiyou Timotewos | Problem framing and business context | `@nebiyoutimotewos` |
+| Pranjal Singh | Data exploration and profiling | `@pranjallll` |
+| Zacharie Houle | Data preparation and feature engineering | `@coredium98` |
 | Joel Tomy | Model comparison, fine-tuning, ensembles, and evaluation | `@joeltomy34` |
 
 ## Repository structure
@@ -36,34 +37,36 @@ insy674-group-project/
 
 ### Business objective and decision context
 
-When a workers’ compensation claim is first reported, a claims adjuster sets an initial reserve called InitialCaseEstimate. This is the amount the insurer expects the claim may eventually cost. The challenge is that this estimate is made early, before the full outcome of the claim is known. Adjusters must rely on limited information, experience, and professional judgment. As a result, some claims may be over-reserved, while others may be significantly under-reserved.
+When a workers’ compensation claim is first reported, a claims adjuster sets an initial reserve called `InitialIncurredCalimsCost` (spelled with that typo in the source CSV). This is the amount the insurer expects the claim may eventually cost. The challenge is that this estimate is made early, before the full outcome of the claim is known. Adjusters must rely on limited information, experience, and professional judgment. As a result, some claims may be over-reserved, while others may be significantly under-reserved.
 
-Our dataset includes both the original InitialCaseEstimate and the final UltimateIncurredClaimCost. This allows us to measure how accurate the initial reserve was. Our objective is to build a machine-learning decision-support system that helps identify when the initial reserve is likely to be inaccurate. Our central research question is: Can machine learning use information available when a workers’ compensation claim is first reported to identify and reduce errors in the initial reserves set by claims adjusters?
+Our dataset includes both the original `InitialIncurredCalimsCost` and the final `UltimateIncurredClaimCost`. This allows us to measure how accurate the initial reserve was. Our objective is to build a machine-learning decision-support system that helps identify when the initial reserve is likely to be inaccurate. Our central research question is: Can machine learning use information available when a workers’ compensation claim is first reported to identify and reduce errors in the initial reserves set by claims adjusters?
 
 The goal is not to replace the claims adjuster. Instead, the model acts as a second layer of review by identifying patterns in historical claims that may be difficult to detect consistently. If successful, the system could help insurers improve reserve accuracy, identify claims that need closer review, and make better decisions earlier in the claims process.
 
 ### Current workaround and baseline
-The current process relies on the claims adjuster’s initial estimate, recorded in the dataset as InitialCaseEstimate. When a claim is first reported, the adjuster reviews the information available at that stage and sets an initial reserve based on the details of the claim and their professional judgment.
+The current process relies on the claims adjuster’s initial estimate, recorded in the dataset as `InitialIncurredCalimsCost`. When a claim is first reported, the adjuster reviews the information available at that stage and sets an initial reserve based on the details of the claim and their professional judgment.
 
-Since this estimate is made before the claim has fully developed, it may differ from the amount the claim ultimately costs. Our dataset also includes UltimateIncurredClaimCost, which gives us the final outcome and allows us to measure how accurate the original reserve was.
+Since this estimate is made before the claim has fully developed, it may differ from the amount the claim ultimately costs. Our dataset also includes `UltimateIncurredClaimCost`, which gives us the final outcome and allows us to measure how accurate the original reserve was.
 
-For this project, InitialCaseEstimate will serve as the main baseline. This gives us a practical comparison because we can evaluate whether the machine-learning model improves on the estimate already being made by the human adjuster. The model will be considered useful if it can reduce prediction error compared with this baseline on unseen claims.
+For this project, `InitialIncurredCalimsCost` will serve as the main baseline. This gives us a practical comparison because we can evaluate whether the machine-learning model improves on the estimate already being made by the human adjuster. The model will be considered useful if it can reduce prediction error compared with this baseline on unseen claims.
 
 ### Problem framing and performance metric
 
 The project is a supervised regression problem because we’re using historical claims with known final outcomes to predict a continuous value. It’s supervised because the model has a known target to learn from, and regression makes more sense than classification because we’re trying to estimate how large the reserving error is, not sort claims into categories. The project uses offline learning because the model is trained on historical claims and doesn’t update every time a new claim is reported. Instead, it could be retrained periodically as more completed claims and final outcomes become available.
 
-Our primary evaluation metric will be Mean Absolute Error (MAE) because it shows, on average, how far the model’s prediction is from the actual outcome. It also gives us a straightforward way to compare the model with the original InitialCaseEstimate. We’ll also report Root Mean Squared Error (RMSE) because it puts more weight on larger prediction errors, which matters because a major reserving mistake can have a much greater financial impact than a small one.
+Our primary evaluation metric will be Mean Absolute Error (MAE) because it shows, on average, how far the model’s prediction is from the actual outcome. It also gives us a straightforward way to compare the model with the original `InitialIncurredCalimsCost`. We’ll also report Root Mean Squared Error (RMSE) because it puts more weight on larger prediction errors, which matters because a major reserving mistake can have a much greater financial impact than a small one.
 
 ## 2. Explore the data
 
 Full profiling and visualizations are in `notebooks/01_explore_data.ipynb`.
 
 ### Attribute summary and target variable
-*(Summarize attribute types, missing value percentages, noise patterns, and distribution shapes. Identify the target variable and its distribution.)*
+The source dataset (`data/raw/train.csv`) contains 36,176 historical workers' compensation claims and 15 original attributes recorded between 1988 and 2005. Every attribute is profiled in `notebooks/01_explore_data.ipynb` by data type, missingness, noise, distribution shape, and task usefulness. Missing values are sparse and restricted to three columns: `WeeklyWages` (56 rows, 0.15%), `HoursWorkedPerWeek` (49 rows, 0.14%), and `MaritalStatus` (22 rows, 0.06%). Data-quality screening identified 75 rows with `HoursWorkedPerWeek > 168`, 16 rows with zero hours worked, 4 rows with `Age` outside the 14 to 100 range, 2 rows with negative reporting delays (`DateReported < DateTimeOfAccident`), and 12,560 rows sharing a repeated `ClaimNumber`. The free-text `ClaimDescription` field has 20,596 distinct uppercase phrases averaging 7 words per claim.
+
+Both cost columns are strictly positive and heavily right-skewed: `InitialIncurredCalimsCost` has a median of \$2,000, a mean of \$7,743.59, and a maximum of \$830,000, whereas the final outcome `UltimateIncurredClaimCost` has a median of \$3,373.86, a mean of \$10,952.82, and a maximum of \$4,027,135.94. From these two columns we define the dollar reserve error `ReserveShortfall = UltimateIncurredClaimCost - InitialIncurredCalimsCost` (median \$82.70, mean +\$3,209.23, ranging from -\$663,152.27 to +\$3,984,135.94, with 54% of claims under-reserved) and the scale-normalized `LogDevelopmentRatio = log(UltimateIncurredClaimCost / InitialIncurredCalimsCost)`. Because `InitialIncurredCalimsCost` is known at First Notice of Loss (FNOL), predicting `UltimateIncurredClaimCost` and subtracting `InitialIncurredCalimsCost` (`predicted shortfall = predicted ultimate - initial reserve`) yields the exact same dollar MAE and RMSE as predicting `ReserveShortfall` directly, while keeping the regression target strictly positive so `log1p` and Tweedie loss functions can be evaluated on the same scale.
 
 ### Correlations and external data
-*(Summarize the main findings from the correlation analysis and document the external dataset joined to enrich the raw features.)*
+Spearman rank correlation and log-log scatter analysis show that `InitialIncurredCalimsCost` has the strongest monotonic relationship with `UltimateIncurredClaimCost`, followed by `WeeklyWages` and `Age`, but substantial dispersion around the diagonal confirms that the initial reserve alone does not capture how claims develop. Reporting lag (`DateReported - DateTimeOfAccident`) is also right-skewed with extreme outliers over one year. These findings motivated five preparation choices: parsing UTC timestamps to extract `ReportingLagDays` and calendar components, applying `log1p` transforms to skewed monetary predictors, computing hourly wage and reserve-to-wage ratios, extracting TF-IDF and SVD features from `ClaimDescription`, and joining annual US Medical Care CPI data (`CPIMEDSL`) by `AccidentYear` to express nominal reserves and wages from 1988 to 2005 in constant 2005 dollars.
 
 ## 3. Prepare the data
 
