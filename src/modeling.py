@@ -104,7 +104,7 @@ def _cpi() -> pd.DataFrame:
 def engineer_features(df: pd.DataFrame, external_cpi: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """Stateless feature engineering - a copy of ``engineer_features`` in Notebook 02 (cell 11).
 
-    Kept here so Notebooks 03/04 (and the UI) can import it. If Notebook 02's
+    Kept here so Notebooks 03/04 (and any scoring script) can import it. If Notebook 02's
     version changes, update this function too (or move both into
     ``src/preprocessing.py``).
     """
@@ -153,7 +153,7 @@ def engineer_features(df: pd.DataFrame, external_cpi: Optional[pd.DataFrame] = N
 def prepare_features(raw_df: pd.DataFrame, drop_sensitive: bool = False) -> pd.DataFrame:
     """Turn raw claim rows (same columns as train.csv, target optional) into model inputs.
 
-    This is also the entry point for scoring *new* claims (e.g. from the UI):
+    This is also the entry point for scoring *new* claims:
     ``model.predict(prepare_features(new_claims, drop_sensitive=True))``.
     """
     eng = engineer_features(raw_df.drop(columns=[ID_COL] + OUTCOME_COLS, errors="ignore"))

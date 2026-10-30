@@ -1,20 +1,12 @@
+# Packages imported by notebooks/ and src/ (notebooks were run with Python 3.13)
 pandas
 numpy
-pyarrow
-kagglehub
-pyjanitor
-ydata-profiling
-missingno
+pyarrow            # parquet files in data/processed/
 matplotlib
 seaborn
-yellowbrick
-scikit-learn
-imbalanced-learn
+scikit-learn>=1.6  # GroupKFold(shuffle=True) was added in 1.6
 lightgbm
 xgboost
-catboost
 optuna
 shap
-rich
-openpyxl
-graphviz
+jupyter            # to run the notebooks

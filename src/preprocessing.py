@@ -7,7 +7,7 @@ from `notebooks/01_explore_data.ipynb`:
   (`GroupShuffleSplit` on `ClaimNumber`) to prevent leakage across the 12,560
   rows sharing claim IDs, and encapsulate every step in functions or
   `BaseEstimator`/`TransformerMixin` classes.
-- Step 1: Data cleaning (domain anomaly flags and sanitization for the 75 rows
+- Step 1: Data cleaning (domain anomaly flags and sanitization for the 26 rows
   with `HoursWorkedPerWeek > 168`, 16 rows with `0` hours, and 2 negative
   reporting lags; train-only quantile clipping via `QuantileOutlierClipper`;
   missingness indicators plus configurable imputation for the 56 missing
@@ -345,7 +345,7 @@ def build_preprocessing_pipeline(
                     FunctionTransformer(
                         func=None,
                         # A named function (not a lambda) so fitted pipelines can be
-                        # saved with joblib/pickle, e.g. for the UI.
+                        # saved with joblib/pickle and reloaded to score new claims.
                         feature_names_out=_bin_feature_names,
                     ),
                 ),
